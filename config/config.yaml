@@ -13,8 +13,8 @@ defaults:
   fan_static_pressure: 0.5
   default_grains: 25
 
-# Future API settings (when we add the web server)
+
 api:
   enabled: false
-  base_url: "https://your-server.com/api"
+  base_url: "https://livingpropertydesigns/lpd-climate-harvester/streamlit.io"
   timeout: 10
