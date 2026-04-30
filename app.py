@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import eeweather
-from pathlib import Path
 from datetime import datetime
 
 st.set_page_config(page_title="LPD Climate Harvester", page_icon="🌡️", layout="wide")
@@ -20,6 +19,23 @@ with col2:
 
 st.markdown("---")
 
+# State abbreviation to full name mapping
+STATE_MAP = {
+    'AL': 'ALABAMA', 'AK': 'ALASKA', 'AZ': 'ARIZONA', 'AR': 'ARKANSAS',
+    'CA': 'CALIFORNIA', 'CO': 'COLORADO', 'CT': 'CONNECTICUT', 'DE': 'DELAWARE',
+    'FL': 'FLORIDA', 'GA': 'GEORGIA', 'HI': 'HAWAII', 'ID': 'IDAHO',
+    'IL': 'ILLINOIS', 'IN': 'INDIANA', 'IA': 'IOWA', 'KS': 'KANSAS',
+    'KY': 'KENTUCKY', 'LA': 'LOUISIANA', 'ME': 'MAINE', 'MD': 'MARYLAND',
+    'MA': 'MASSACHUSETTS', 'MI': 'MICHIGAN', 'MN': 'MINNESOTA', 'MS': 'MISSISSIPPI',
+    'MO': 'MISSOURI', 'MT': 'MONTANA', 'NE': 'NEBRASKA', 'NV': 'NEVADA',
+    'NH': 'NEW HAMPSHIRE', 'NJ': 'NEW JERSEY', 'NM': 'NEW MEXICO', 'NY': 'NEW YORK',
+    'NC': 'NORTH CAROLINA', 'ND': 'NORTH DAKOTA', 'OH': 'OHIO', 'OK': 'OKLAHOMA',
+    'OR': 'OREGON', 'PA': 'PENNSYLVANIA', 'RI': 'RHODE ISLAND', 'SC': 'SOUTH CAROLINA',
+    'SD': 'SOUTH DAKOTA', 'TN': 'TENNESSEE', 'TX': 'TEXAS', 'UT': 'UTAH',
+    'VT': 'VERMONT', 'VA': 'VIRGINIA', 'WA': 'WASHINGTON', 'WV': 'WEST VIRGINIA',
+    'WI': 'WISCONSIN', 'WY': 'WYOMING'
+}
+
 @st.cache_data(show_spinner="Loading climate data...")
 def load_data():
     # Load ZIP data
@@ -29,12 +45,10 @@ def load_data():
         'lng': 'Longitude', 'city': 'City', 'state_id': 'State_Abbr'
     })
 
-    # Load ASHRAE data with better cleaning
+    # Load ASHRAE data
     ashrae_df = pd.read_csv("data/raw/ashrae_county.csv", header=None, dtype=str, skiprows=3, low_memory=False)
     ashrae_df = ashrae_df.iloc[:, [0, 1, 2, 3]]
     ashrae_df.columns = ['State', 'County', 'Cooling DB (1%)', 'Heating DB (99%)']
-    
-    # Clean ASHRAE county names
     ashrae_df['State'] = ashrae_df['State'].astype(str).str.upper().str.strip()
     ashrae_df['County'] = ashrae_df['County'].astype(str).str.upper().str.replace(' COUNTY', '', regex=False).str.strip()
 
@@ -45,7 +59,8 @@ def load_data():
         lat = float(row['Latitude'])
         lon = float(row['Longitude'])
         county = str(row['County']).upper().strip()
-        state = str(row['State_Abbr']).strip().upper()
+        state_abbr = str(row['State_Abbr']).strip().upper()
+        full_state = STATE_MAP.get(state_abbr, state_abbr)
 
         # EEWEATHER for climate zone
         try:
@@ -54,36 +69,30 @@ def load_data():
         except:
             iecc_zone = 'Unknown'
 
-        # === IMPROVED ASHRAE MATCHING ===
-        heating = 50.0
-        cooling = 80.0
-        source = "Fallback"
+        # ASHRAE matching (now with full state name)
+        match = ashrae_df[
+            (ashrae_df['State'] == full_state) & 
+            (ashrae_df['County'].str.contains(county, na=False))
+        ]
 
-        # Try exact match first
-        exact = ashrae_df[(ashrae_df['State'] == state) & (ashrae_df['County'] == county)]
-        if not exact.empty:
-            heating = float(exact.iloc[0]['Heating DB (99%)'])
-            cooling = float(exact.iloc[0]['Cooling DB (1%)'])
+        if not match.empty:
+            heating = float(match.iloc[0]['Heating DB (99%)'])
+            cooling = float(match.iloc[0]['Cooling DB (1%)'])
             source = "Real"
         else:
-            # Try contains match
-            contains = ashrae_df[
-                (ashrae_df['State'] == state) & 
-                (ashrae_df['County'].str.contains(county, na=False))
-            ]
-            if not contains.empty:
-                heating = float(contains.iloc[0]['Heating DB (99%)'])
-                cooling = float(contains.iloc[0]['Cooling DB (1%)'])
-                source = "Real"
+            # Known good fallback for Yavapai
+            if county == "YAVAPAI" and state_abbr == "AZ":
+                heating = 22.0
+                cooling = 97.0
+                source = "Real (verified)"
             else:
-                # Known good fallback for Yavapai
-                if county == "YAVAPAI" and state == "AZ":
-                    heating = 22.0
-                    cooling = 97.0
-                    source = "Real (verified)"
+                heating = 50.0
+                cooling = 80.0
+                source = "Fallback"
 
         results.append({
             'ZIP': zip_code,
+            'City': row['City'],
             'iecc_zone': iecc_zone,
             'heating_99': round(heating, 1),
             'cooling_1': round(cooling, 1),
@@ -139,6 +148,9 @@ if zip_input:
                     st.metric("Ground Temp Winter", f"{row['ground_winter']}°F")
                     st.metric("Ground Temp Summer", f"{row['ground_summer']}°F")
                     st.metric("Data Source", row['data_source'])
+
+                # Show city for verification (as you requested)
+                st.caption(f"📍 {row['City']}, {zip_input}")
 
                 st.subheader("Basic Shading Reference")
                 shading = pd.DataFrame({
