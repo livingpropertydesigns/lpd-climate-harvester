@@ -1,0 +1,20 @@
+# Manual J / Manual D Harvester Configuration
+
+paths:
+  raw_data: "data/raw/"
+  processed_data: "data/processed/"
+  vectorworks_templates: "vectorworks/"
+
+# Default values
+defaults:
+  indoor_heating_target: 70
+  indoor_cooling_target: 75
+  friction_rate: 0.08
+  fan_static_pressure: 0.5
+  default_grains: 25
+
+# Future API settings (when we add the web server)
+api:
+  enabled: false
+  base_url: "https://your-server.com/api"
+  timeout: 10
