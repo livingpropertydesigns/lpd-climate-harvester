@@ -4,12 +4,7 @@ import eeweather
 from pathlib import Path
 from datetime import datetime
 
-# Page config
-st.set_page_config(
-    page_title="LPD Climate Harvester",
-    page_icon="🌡️",
-    layout="wide"
-)
+st.set_page_config(page_title="LPD Climate Harvester", page_icon="🌡️", layout="wide")
 
 # Logo + Title
 col1, col2 = st.columns([1, 6])
@@ -25,7 +20,6 @@ with col2:
 
 st.markdown("---")
 
-# === Generate data on startup (cached) ===
 @st.cache_data(show_spinner="Loading climate data...")
 def load_data():
     # Load ZIP data
@@ -35,12 +29,14 @@ def load_data():
         'lng': 'Longitude', 'city': 'City', 'state_id': 'State_Abbr'
     })
 
-    # Load ASHRAE data
+    # Load ASHRAE data with better cleaning
     ashrae_df = pd.read_csv("data/raw/ashrae_county.csv", header=None, dtype=str, skiprows=3, low_memory=False)
     ashrae_df = ashrae_df.iloc[:, [0, 1, 2, 3]]
     ashrae_df.columns = ['State', 'County', 'Cooling DB (1%)', 'Heating DB (99%)']
+    
+    # Clean ASHRAE county names
     ashrae_df['State'] = ashrae_df['State'].astype(str).str.upper().str.strip()
-    ashrae_df['County'] = ashrae_df['County'].astype(str).str.replace(' County', '', regex=False).str.strip().str.upper()
+    ashrae_df['County'] = ashrae_df['County'].astype(str).str.upper().str.replace(' COUNTY', '', regex=False).str.strip()
 
     results = []
 
@@ -48,7 +44,7 @@ def load_data():
         zip_code = int(row['ZIP'])
         lat = float(row['Latitude'])
         lon = float(row['Longitude'])
-        county = str(row['County']).strip().upper()
+        county = str(row['County']).upper().strip()
         state = str(row['State_Abbr']).strip().upper()
 
         # EEWEATHER for climate zone
@@ -58,24 +54,33 @@ def load_data():
         except:
             iecc_zone = 'Unknown'
 
-        # ASHRAE matching
-        match = ashrae_df[
-            (ashrae_df['State'] == state) & 
-            (ashrae_df['County'].str.contains(county, na=False))
-        ]
+        # === IMPROVED ASHRAE MATCHING ===
+        heating = 50.0
+        cooling = 80.0
+        source = "Fallback"
 
-        if not match.empty:
-            heating = float(match.iloc[0]['Heating DB (99%)'])
-            cooling = float(match.iloc[0]['Cooling DB (1%)'])
+        # Try exact match first
+        exact = ashrae_df[(ashrae_df['State'] == state) & (ashrae_df['County'] == county)]
+        if not exact.empty:
+            heating = float(exact.iloc[0]['Heating DB (99%)'])
+            cooling = float(exact.iloc[0]['Cooling DB (1%)'])
             source = "Real"
-        elif county == "YAVAPAI" and state == "AZ":
-            heating = 22.0
-            cooling = 97.0
-            source = "Real (verified)"
         else:
-            heating = 50.0
-            cooling = 80.0
-            source = "Fallback"
+            # Try contains match
+            contains = ashrae_df[
+                (ashrae_df['State'] == state) & 
+                (ashrae_df['County'].str.contains(county, na=False))
+            ]
+            if not contains.empty:
+                heating = float(contains.iloc[0]['Heating DB (99%)'])
+                cooling = float(contains.iloc[0]['Cooling DB (1%)'])
+                source = "Real"
+            else:
+                # Known good fallback for Yavapai
+                if county == "YAVAPAI" and state == "AZ":
+                    heating = 22.0
+                    cooling = 97.0
+                    source = "Real (verified)"
 
         results.append({
             'ZIP': zip_code,
@@ -96,7 +101,6 @@ def load_data():
 
 df = load_data()
 
-# Also load ZIP data for lookup
 @st.cache_data
 def load_zip_data():
     return pd.read_csv("data/raw/uszips.csv", usecols=['zip', 'lat'])
@@ -136,7 +140,6 @@ if zip_input:
                     st.metric("Ground Temp Summer", f"{row['ground_summer']}°F")
                     st.metric("Data Source", row['data_source'])
 
-                # Shading Reference
                 st.subheader("Basic Shading Reference")
                 shading = pd.DataFrame({
                     "Orientation": ["North", "East", "South", "West"],
@@ -164,6 +167,5 @@ if zip_input:
     except ValueError:
         st.error("Please enter a valid 5-digit ZIP code.")
 
-# Footer
 st.markdown("---")
 st.caption(f"Built by Living Property Designs, LLC • Last updated: {datetime.now().strftime('%B %d, %Y')}")
