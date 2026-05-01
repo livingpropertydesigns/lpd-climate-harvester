@@ -40,9 +40,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Data files - only exclude raw source files if they're very large
-# We need the raw files for the Streamlit app to work
-# Keep the processed lookup table (it's generated)
+# Project-specific
+data/raw/*.csv
 data/processed/*.csv
 !data/processed/manual_j_zip_lookup.csv
 

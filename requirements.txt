@@ -3,5 +3,3 @@ requests>=2.31
 numpy>=1.26
 sympy>=1.12
 streamlit>=1.32
-eeweather
-pytz
